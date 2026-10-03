@@ -316,6 +316,51 @@ io.on("connection", (socket) => {
       );
     }
   );
+  socket.on("seek", (data: PlaybackPayload) => {
+  const room = roomManager.getRoom(data.roomId);
+
+  if (!room) {
+    socket.emit("room_error", {
+      message: "Room does not exist",
+    });
+
+    return;
+  }
+
+  const participant = room.participants.find(
+    (user) => user.userId === socket.id
+  );
+
+  if (!participant) {
+    socket.emit("room_error", {
+      message: "You are not a member of this room",
+    });
+
+    return;
+  }
+
+  if (
+    participant.role !== "host" &&
+    participant.role !== "moderator"
+  ) {
+    socket.emit("room_error", {
+      message:
+        "You do not have permission to control playback",
+    });
+
+    return;
+  }
+
+  room.currentTime = data.currentTime;
+
+  console.log(
+    `SEEK EVENT: ${participant.username} -> ${data.currentTime}s`
+  );
+
+  socket.to(data.roomId).emit("seek", {
+    currentTime: room.currentTime,
+  });
+});
 
   socket.on("disconnect", () => {
     console.log(
