@@ -6,3 +6,8 @@ export interface JoinRoomPayload {
   roomId: string;
   username: string;
 }
+
+export interface PlaybackPayload {
+  roomId: string;
+  currentTime: number;
+}

@@ -5,59 +5,158 @@ import {
   useRef,
 } from "react";
 
-interface YouTubePlayerProps {
-  videoId: string;
-}
-
 export interface YouTubePlayerHandle {
   play: () => void;
   pause: () => void;
-  seek: (seconds: number) => void;
+  seek: (time: number) => void;
+  getCurrentTime: () => number;
+
+  // Used only when a command comes from another client.
+  playFromRemote: () => void;
+  pauseFromRemote: () => void;
+}
+
+interface YouTubePlayerProps {
+  videoId: string;
+  onPlay?: () => void;
+  onPause?: () => void;
 }
 
 const YouTubePlayer = forwardRef<
   YouTubePlayerHandle,
   YouTubePlayerProps
->(({ videoId }, ref) => {
-  // This stores the ACTUAL YouTube player
-  const youtubePlayerRef = useRef<YT.Player | null>(null);
+>(({ videoId, onPlay, onPause }, ref) => {
+  const playerRef = useRef<YT.Player | null>(null);
+  const containerRef =
+    useRef<HTMLDivElement | null>(null);
 
-  // This stores the HTML div where YouTube is created
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const onPlayRef = useRef(onPlay);
+  const onPauseRef = useRef(onPause);
+
+  /*
+   * When another client sends us a play/pause command,
+   * YouTube itself will fire onStateChange.
+   *
+   * This ref tells us that the state change was caused
+   * by a remote command, so we must NOT send it back
+   * through Socket.IO.
+   */
+  const remoteActionRef = useRef<
+    "play" | "pause" | null
+  >(null);
+
+  useEffect(() => {
+    onPlayRef.current = onPlay;
+    onPauseRef.current = onPause;
+  }, [onPlay, onPause]);
 
   useImperativeHandle(ref, () => ({
     play: () => {
-      youtubePlayerRef.current?.playVideo();
+      const player = playerRef.current;
+
+      if (!player) {
+        console.log(
+          "PLAY FAILED: player not ready"
+        );
+        return;
+      }
+
+      player.playVideo();
     },
 
     pause: () => {
-      youtubePlayerRef.current?.pauseVideo();
+      const player = playerRef.current;
+
+      if (!player) {
+        console.log(
+          "PAUSE FAILED: player not ready"
+        );
+        return;
+      }
+
+      player.pauseVideo();
     },
 
-    seek: (seconds: number) => {
-      youtubePlayerRef.current?.seekTo(seconds, true);
+    seek: (time: number) => {
+      const player = playerRef.current;
+
+      if (!player) {
+        console.log(
+          "SEEK FAILED: player not ready"
+        );
+        return;
+      }
+
+      player.seekTo(time, true);
+    },
+
+    getCurrentTime: () => {
+      return (
+        playerRef.current?.getCurrentTime() ?? 0
+      );
+    },
+
+    /*
+     * Remote PLAY
+     */
+    playFromRemote: () => {
+      const player = playerRef.current;
+
+      if (!player) {
+        console.log(
+          "REMOTE PLAY FAILED: player not ready"
+        );
+        return;
+      }
+
+      console.log(
+        "PLAYER: executing remote PLAY"
+      );
+
+      remoteActionRef.current = "play";
+
+      player.playVideo();
+    },
+
+    /*
+     * Remote PAUSE
+     */
+    pauseFromRemote: () => {
+      const player = playerRef.current;
+
+      if (!player) {
+        console.log(
+          "REMOTE PAUSE FAILED: player not ready"
+        );
+        return;
+      }
+
+      console.log(
+        "PLAYER: executing remote PAUSE"
+      );
+
+      remoteActionRef.current = "pause";
+
+      player.pauseVideo();
     },
   }));
 
   useEffect(() => {
-    let cancelled = false;
+    let destroyed = false;
 
     const createPlayer = () => {
       if (
-        cancelled ||
         !containerRef.current ||
-        !window.YT
+        destroyed
       ) {
         return;
       }
 
-      // Destroy previous player if it exists
-      if (youtubePlayerRef.current) {
-        youtubePlayerRef.current.destroy();
-        youtubePlayerRef.current = null;
-      }
+      console.log(
+        "Creating YouTube player..."
+      );
 
-      youtubePlayerRef.current = new YT.Player(
+      playerRef.current = new YT.Player(
         containerRef.current,
         {
           videoId,
@@ -69,43 +168,120 @@ const YouTubePlayer = forwardRef<
             autoplay: 0,
             controls: 1,
             rel: 0,
+            playsinline: 1,
           },
 
           events: {
             onReady: () => {
-              console.log("YouTube player is ready");
+              console.log(
+                "YouTube player is ready"
+              );
             },
 
-            onStateChange: (event: YT.OnStateChangeEvent) => {
+            onStateChange: (event) => {
               console.log(
-                "YouTube player state:",
+                "YouTube state changed:",
                 event.data
               );
+
+              /*
+               * PLAYING
+               */
+              if (
+                event.data ===
+                YT.PlayerState.PLAYING
+              ) {
+                /*
+                 * If this PLAYING state was caused
+                 * by a remote command, consume it
+                 * and DO NOT emit another socket event.
+                 */
+                if (
+                  remoteActionRef.current ===
+                  "play"
+                ) {
+                  console.log(
+                    "Ignoring remote PLAY state change"
+                  );
+
+                  remoteActionRef.current =
+                    null;
+
+                  return;
+                }
+
+                console.log(
+                  "LOCAL YOUTUBE PLAY DETECTED"
+                );
+
+                onPlayRef.current?.();
+
+                return;
+              }
+
+              /*
+               * PAUSED
+               */
+              if (
+                event.data ===
+                YT.PlayerState.PAUSED
+              ) {
+                /*
+                 * If this PAUSED state was caused
+                 * by a remote command, consume it.
+                 */
+                if (
+                  remoteActionRef.current ===
+                  "pause"
+                ) {
+                  console.log(
+                    "Ignoring remote PAUSE state change"
+                  );
+
+                  remoteActionRef.current =
+                    null;
+
+                  return;
+                }
+
+                console.log(
+                  "LOCAL YOUTUBE PAUSE DETECTED"
+                );
+
+                onPauseRef.current?.();
+
+                return;
+              }
             },
           },
         }
       );
     };
 
-    // YouTube API already loaded
+    /*
+     * YouTube API already loaded
+     */
     if (window.YT) {
       createPlayer();
     } else {
       const previousCallback =
         window.onYouTubeIframeAPIReady;
 
-      window.onYouTubeIframeAPIReady = () => {
-        previousCallback?.();
-        createPlayer();
-      };
+      window.onYouTubeIframeAPIReady =
+        () => {
+          previousCallback?.();
 
-      // Load YouTube API only if not already loaded
-      if (
-        !document.querySelector(
+          createPlayer();
+        };
+
+      const existingScript =
+        document.querySelector(
           'script[src="https://www.youtube.com/iframe_api"]'
-        )
-      ) {
-        const script = document.createElement("script");
+        );
+
+      if (!existingScript) {
+        const script =
+          document.createElement("script");
 
         script.src =
           "https://www.youtube.com/iframe_api";
@@ -117,12 +293,15 @@ const YouTubePlayer = forwardRef<
     }
 
     return () => {
-      cancelled = true;
+      destroyed = true;
 
-      if (youtubePlayerRef.current) {
-        youtubePlayerRef.current.destroy();
-        youtubePlayerRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.destroy();
+
+        playerRef.current = null;
       }
+
+      remoteActionRef.current = null;
     };
   }, [videoId]);
 
@@ -133,6 +312,7 @@ const YouTubePlayer = forwardRef<
   );
 });
 
-YouTubePlayer.displayName = "YouTubePlayer";
+YouTubePlayer.displayName =
+  "YouTubePlayer";
 
 export default YouTubePlayer;
