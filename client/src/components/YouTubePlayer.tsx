@@ -543,9 +543,13 @@ const YouTubePlayer = forwardRef<
 
         {!canControl && (
           <div
-            className="absolute inset-0 z-10 cursor-default"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/20 cursor-default"
             aria-label="Watch only"
-          />
+          >
+            <span className="rounded-full border border-white/10 bg-slate-950/80 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-lg backdrop-blur">
+              Watch only
+            </span>
+          </div>
         )}
       </div>
     );

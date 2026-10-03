@@ -48,6 +48,9 @@ function App() {
   const [serverMessage, setServerMessage] =
     useState("");
 
+  const [actionPending, setActionPending] =
+    useState<string | null>(null);
+
   const [roomId, setRoomId] =
     useState("");
 
@@ -149,6 +152,8 @@ function App() {
       setServerMessage(
         "Connected to server"
       );
+
+      setActionPending(null);
     };
 
     const handleDisconnect = () => {
@@ -157,6 +162,8 @@ function App() {
       setServerMessage(
         "Disconnected from server"
       );
+
+      setActionPending(null);
     };
 
     const handleServerReady = (
@@ -167,6 +174,8 @@ function App() {
       setServerMessage(
         data.message
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -204,6 +213,8 @@ function App() {
       setServerMessage(
         `Room ${data.roomId} created successfully`
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -234,6 +245,8 @@ function App() {
       setServerMessage(
         `Joined room ${data.roomId}`
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -282,6 +295,8 @@ function App() {
       setServerMessage(
         `${data.participant.username} joined the room`
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -311,10 +326,14 @@ function App() {
         setServerMessage(
           `Your role is now ${data.role}`
         );
+
+        setActionPending(null);
       } else {
         setServerMessage(
           `${data.username} is now ${data.role}`
         );
+
+        setActionPending(null);
       }
     };
 
@@ -348,6 +367,8 @@ function App() {
             "You were removed from the room"
         );
 
+        setActionPending(null);
+
         return;
       }
 
@@ -365,6 +386,8 @@ function App() {
             )
         );
       }
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -384,6 +407,8 @@ function App() {
       setServerMessage(
         `${data.participant.username} left the room`
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -450,6 +475,8 @@ function App() {
       setServerMessage(
         `Video changed to ${data.videoId}`
       );
+
+      setActionPending(null);
     };
 
     /* ------------------------------------------------------------------ */
@@ -651,6 +678,8 @@ function App() {
       return;
     }
 
+    setActionPending("create");
+
     socket.emit(
       "create_room",
       {
@@ -688,6 +717,8 @@ function App() {
 
       return;
     }
+
+    setActionPending("join");
 
     socket.emit(
       "join_room",
@@ -816,6 +847,8 @@ function App() {
       return;
     }
 
+    setActionPending("change-video");
+
     socket.emit(
       "change_video",
       {
@@ -839,6 +872,8 @@ function App() {
       return;
     }
 
+    setActionPending("role");
+
     socket.emit(
       "assign_role",
       {
@@ -860,6 +895,12 @@ function App() {
       return;
     }
 
+    if (!window.confirm("Remove this participant from the room?")) {
+      return;
+    }
+
+    setActionPending("remove");
+
     socket.emit(
       "remove_participant",
       {
@@ -867,6 +908,19 @@ function App() {
         userId,
       }
     );
+  };
+
+  const copyRoomId = async () => {
+    if (!roomId) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(roomId);
+      setServerMessage("Room ID copied to clipboard");
+    } catch {
+      setServerMessage("Unable to copy room ID");
+    }
   };
 
   /* ---------------------------------------------------------------------- */
@@ -877,6 +931,8 @@ function App() {
     if (!roomId) {
       return;
     }
+
+    setActionPending("leave");
 
     socket.emit(
       "leave_room",
@@ -976,7 +1032,7 @@ function App() {
                   disabled={!connected}
                   className="w-full rounded-xl bg-blue-600 px-4 py-3 font-medium transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Create Room
+                  {actionPending === "create" ? "Creating..." : "Create Room"}
                 </button>
               </div>
             </div>
@@ -1009,7 +1065,7 @@ function App() {
                   disabled={!connected}
                   className="w-full rounded-xl bg-slate-700 px-4 py-3 font-medium transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Join Room
+                  {actionPending === "join" ? "Joining..." : "Join Room"}
                 </button>
               </div>
             </div>
@@ -1056,16 +1112,36 @@ function App() {
                       {currentRole}
                     </span>
                   )}
+
+                  <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-400">
+                    {canControl ? "Controller" : "Watch only"}
+                  </span>
                 </div>
               </div>
 
-              <button
-                onClick={leaveRoom}
-                className="rounded-xl border border-red-500/30 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
-              >
-                Leave Room
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={copyRoomId}
+                  className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800"
+                >
+                  Copy Room ID
+                </button>
+
+                <button
+                  onClick={leaveRoom}
+                  disabled={actionPending === "leave"}
+                  className="rounded-xl border border-red-500/30 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionPending === "leave" ? "Leaving..." : "Leave Room"}
+                </button>
+              </div>
             </div>
+
+            {!connected && (
+              <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+                Connection lost. Room controls are temporarily unavailable.
+              </div>
+            )}
 
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
               {/* PLAYER */}
@@ -1076,7 +1152,7 @@ function App() {
                     ref={playerRef}
                     videoId={videoId}
                     syncState={syncState}
-                    canControl={canControl}
+                    canControl={canControl && connected}
                     onPlay={handlePlay}
                     onPause={handlePause}
                     onSeek={handleSeek}
@@ -1098,9 +1174,9 @@ function App() {
                       </p>
                     </div>
 
-                    {!canControl && (
+                    {(!canControl || !connected) && (
                       <span className="text-xs text-slate-500">
-                        Watch only
+                        {!connected ? "Offline" : "Watch only"}
                       </span>
                     )}
                   </div>
@@ -1115,7 +1191,9 @@ function App() {
                         )
                       }
                       disabled={
-                        !canControl
+                        !canControl ||
+                        !connected ||
+                        actionPending !== null
                       }
                       placeholder="YouTube video ID"
                       className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1126,11 +1204,13 @@ function App() {
                         changeVideo
                       }
                       disabled={
-                        !canControl
+                        !canControl ||
+                        !connected ||
+                        actionPending !== null
                       }
                       className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Change Video
+                      {actionPending === "change-video" ? "Changing..." : "Change Video"}
                     </button>
                   </div>
                 </div>
@@ -1217,9 +1297,10 @@ function App() {
                                         participant.userId
                                       )
                                     }
-                                    className="flex-1 rounded-lg bg-blue-600/15 px-2 py-2 text-xs font-medium text-blue-300 transition hover:bg-blue-600/25"
+                                    disabled={!connected || actionPending !== null}
+                                    className="flex-1 rounded-lg bg-blue-600/15 px-2 py-2 text-xs font-medium text-blue-300 transition hover:bg-blue-600/25 disabled:cursor-not-allowed disabled:opacity-40"
                                   >
-                                    Make Moderator
+                                    {actionPending === "role" ? "Updating..." : "Make Moderator"}
                                   </button>
                                 )}
 
@@ -1229,9 +1310,9 @@ function App() {
                                       participant.userId
                                     )
                                   }
-                                  className="flex-1 rounded-lg bg-red-500/10 px-2 py-2 text-xs font-medium text-red-400 transition hover:bg-red-500/20"
+                                  className="flex-1 rounded-lg bg-red-500/10 px-2 py-2 text-xs font-medium text-red-400 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
-                                  Remove
+                                  {actionPending === "remove" ? "Removing..." : "Remove"}
                                 </button>
                               </div>
                             )}
