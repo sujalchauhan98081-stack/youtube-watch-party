@@ -839,3 +839,168 @@ test(
     }
   }
 );
+
+test(
+  "host disconnect removes host and notifies remaining participants",
+  async () => {
+    const host = await connectClient();
+    const participant =
+      await connectClient();
+
+    try {
+      const created =
+        await createRoom(
+          host,
+          "Host"
+        );
+
+      await joinRoom(
+        participant,
+        created.roomId,
+        "Participant"
+      );
+
+      const hostId = host.id;
+
+      assert.ok(hostId);
+
+      const userLeft =
+        waitForEvent<{
+          participant: {
+            userId: string;
+            username: string;
+            role: string;
+          };
+          participants: Array<{
+            userId: string;
+            username: string;
+            role: string;
+          }>;
+        }>(
+          participant,
+          "user_left"
+        );
+
+      host.disconnect();
+
+      const result =
+        await userLeft;
+
+      assert.equal(
+        result.participant.userId,
+        hostId
+      );
+
+      assert.equal(
+        result.participant.username,
+        "Host"
+      );
+
+      assert.equal(
+        result.participant.role,
+        "host"
+      );
+
+      assert.equal(
+        result.participants.some(
+          (user) =>
+            user.userId === hostId
+        ),
+        false
+      );
+
+      assert.equal(
+        result.participants.some(
+          (user) =>
+            user.userId === participant.id
+        ),
+        true
+      );
+    } finally {
+      participant.disconnect();
+    }
+  }
+);
+
+test(
+  "participant disconnect removes participant and notifies remaining participants",
+  async () => {
+    const host = await connectClient();
+    const participant =
+      await connectClient();
+
+    try {
+      const created =
+        await createRoom(
+          host,
+          "Host"
+        );
+
+      await joinRoom(
+        participant,
+        created.roomId,
+        "Participant"
+      );
+
+      const participantId =
+        participant.id;
+
+      assert.ok(participantId);
+
+      const userLeft =
+        waitForEvent<{
+          participant: {
+            userId: string;
+            username: string;
+            role: string;
+          };
+          participants: Array<{
+            userId: string;
+            username: string;
+            role: string;
+          }>;
+        }>(
+          host,
+          "user_left"
+        );
+
+      participant.disconnect();
+
+      const result =
+        await userLeft;
+
+      assert.equal(
+        result.participant.userId,
+        participantId
+      );
+
+      assert.equal(
+        result.participant.username,
+        "Participant"
+      );
+
+      assert.equal(
+        result.participant.role,
+        "participant"
+      );
+
+      assert.equal(
+        result.participants.some(
+          (user) =>
+            user.userId === participantId
+        ),
+        false
+      );
+
+      assert.equal(
+        result.participants.some(
+          (user) =>
+            user.userId === host.id
+        ),
+        true
+      );
+    } finally {
+      host.disconnect();
+    }
+  }
+);
