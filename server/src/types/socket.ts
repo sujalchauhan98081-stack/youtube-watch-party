@@ -29,3 +29,13 @@ export interface RemoveParticipantPayload {
   roomId: string;
   userId: string;
 }
+
+export interface SendChatMessagePayload {
+  roomId: string;
+  text: string;
+}
+
+export interface DeleteChatMessagePayload {
+  roomId: string;
+  messageId: string;
+}

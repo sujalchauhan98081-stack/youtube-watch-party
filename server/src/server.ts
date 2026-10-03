@@ -38,6 +38,17 @@ const io = new Server(httpServer, {
 });
 
 const roomManager = new RoomManager();
+
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  createdAt: number;
+}
+
+const roomMessages = new Map<string, ChatMessage[]>();
+
 /* -------------------------------------------------------------------------- */
 /*                                HTTP ROUTES                                 */
 /* -------------------------------------------------------------------------- */
@@ -128,6 +139,8 @@ io.on("connection", (socket) => {
           host
         );
 
+      roomMessages.set(roomId, []);
+
       socket.data.roomId = roomId;
 
       socket.join(roomId);
@@ -206,6 +219,10 @@ io.on("connection", (socket) => {
         room: updatedRoom,
       });
 
+      socket.emit("chat_history", {
+        messages: roomMessages.get(roomId) ?? [],
+      });
+
       /* ------------------------------------------------------------------ */
       /*                       LATE JOIN SYNCHRONIZATION                    */
       /* ------------------------------------------------------------------ */
@@ -239,6 +256,140 @@ io.on("connection", (socket) => {
 
       console.log(
         `${username} joined room ${roomId}`
+      );
+    }
+  );
+
+
+  /* ---------------------------------------------------------------------- */
+  /*                                CHAT                                    */
+  /* ---------------------------------------------------------------------- */
+
+  socket.on(
+    "send_chat_message",
+    (data: {
+      roomId: string;
+      text: string;
+    }) => {
+      const roomId = data.roomId?.trim();
+      const text = data.text?.trim();
+
+      if (!roomId || !hasRoomAccess(socket, roomId)) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      const participant = getParticipant(socket, roomId);
+
+      if (!participant) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      if (!text) {
+        return;
+      }
+
+      if (text.length > 500) {
+        sendPermissionError(
+          socket,
+          "Chat message cannot exceed 500 characters."
+        );
+        return;
+      }
+
+      const message: ChatMessage = {
+        id: `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
+        userId: participant.userId,
+        username: participant.username,
+        text,
+        createdAt: Date.now(),
+      };
+
+      const messages = roomMessages.get(roomId) ?? [];
+      messages.push(message);
+
+      // Keep the basic in-memory chat bounded.
+      if (messages.length > 100) {
+        messages.splice(0, messages.length - 100);
+      }
+
+      roomMessages.set(roomId, messages);
+
+      io.to(roomId).emit(
+        "chat_message",
+        message
+      );
+    }
+  );
+
+  socket.on(
+    "delete_chat_message",
+    (data: {
+      roomId: string;
+      messageId: string;
+    }) => {
+      const roomId = data.roomId?.trim();
+
+      if (!roomId || !hasRoomAccess(socket, roomId)) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      const requester = getParticipant(
+        socket,
+        roomId
+      );
+
+      if (!requester) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      if (requester.role !== "host") {
+        sendPermissionError(
+          socket,
+          "Only the host can delete chat messages."
+        );
+        return;
+      }
+
+      const messages = roomMessages.get(roomId);
+
+      if (!messages) {
+        return;
+      }
+
+      const index = messages.findIndex(
+        (message) =>
+          message.id === data.messageId
+      );
+
+      if (index === -1) {
+        return;
+      }
+
+      messages.splice(index, 1);
+
+      io.to(roomId).emit(
+        "chat_message_deleted",
+        {
+          messageId: data.messageId,
+        }
       );
     }
   );

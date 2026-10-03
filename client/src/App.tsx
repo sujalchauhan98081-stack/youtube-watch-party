@@ -38,6 +38,14 @@ interface SyncState {
   isPlaying: boolean;
 }
 
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  createdAt: number;
+}
+
 function App() {
   const playerRef =
     useRef<YouTubePlayerHandle>(null);
@@ -77,6 +85,12 @@ function App() {
 
   const [participants, setParticipants] =
     useState<Participant[]>([]);
+
+  const [chatMessages, setChatMessages] =
+    useState<ChatMessage[]>([]);
+
+  const [chatInput, setChatInput] =
+    useState("");
 
   const canControl =
     currentRole === "host" ||
@@ -412,6 +426,37 @@ function App() {
     };
 
     /* ------------------------------------------------------------------ */
+    /*                                CHAT                                */
+    /* ------------------------------------------------------------------ */
+
+    const handleChatHistory = (data: {
+      messages: ChatMessage[];
+    }) => {
+      setChatMessages(
+        (data.messages ?? []).slice(-100)
+      );
+    };
+
+    const handleChatMessage = (
+      message: ChatMessage
+    ) => {
+      setChatMessages((previous) =>
+        [...previous, message].slice(-100)
+      );
+    };
+
+    const handleChatMessageDeleted = (data: {
+      messageId: string;
+    }) => {
+      setChatMessages((previous) =>
+        previous.filter(
+          (message) =>
+            message.id !== data.messageId
+        )
+      );
+    };
+
+    /* ------------------------------------------------------------------ */
     /*                          REMOTE PLAY                               */
     /* ------------------------------------------------------------------ */
 
@@ -581,6 +626,21 @@ function App() {
       handleSyncState
     );
 
+    socket.on(
+      "chat_history",
+      handleChatHistory
+    );
+
+    socket.on(
+      "chat_message",
+      handleChatMessage
+    );
+
+    socket.on(
+      "chat_message_deleted",
+      handleChatMessageDeleted
+    );
+
     return () => {
       socket.off(
         "connect",
@@ -655,6 +715,21 @@ function App() {
       socket.off(
         "sync_state",
         handleSyncState
+      );
+
+      socket.off(
+        "chat_history",
+        handleChatHistory
+      );
+
+      socket.off(
+        "chat_message",
+        handleChatMessage
+      );
+
+      socket.off(
+        "chat_message_deleted",
+        handleChatMessageDeleted
       );
     };
   }, [
@@ -924,6 +999,48 @@ function App() {
   };
 
   /* ---------------------------------------------------------------------- */
+  /*                              CHAT                                     */
+  /* ---------------------------------------------------------------------- */
+
+  const sendChatMessage = () => {
+    const text = chatInput.trim();
+
+    if (!roomId || !connected || !text) {
+      return;
+    }
+
+    socket.emit(
+      "send_chat_message",
+      {
+        roomId,
+        text,
+      }
+    );
+
+    setChatInput("");
+  };
+
+  const deleteChatMessage = (
+    messageId: string
+  ) => {
+    if (
+      !isHost ||
+      !roomId ||
+      !connected
+    ) {
+      return;
+    }
+
+    socket.emit(
+      "delete_chat_message",
+      {
+        roomId,
+        messageId,
+      }
+    );
+  };
+
+  /* ---------------------------------------------------------------------- */
   /*                         LEAVE ROOM                                    */
   /* ---------------------------------------------------------------------- */
 
@@ -948,6 +1065,9 @@ function App() {
     );
 
     setParticipants([]);
+
+    setChatMessages([]);
+    setChatInput("");
 
     setSyncState(null);
 
@@ -1359,6 +1479,124 @@ function App() {
                       Watch only
                     </p>
                   </div>
+
+                {/* CHAT */}
+
+                <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h2 className="font-semibold">
+                        Room Chat
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Everyone can chat
+                      </p>
+                    </div>
+
+                    {isHost && (
+                      <span className="rounded-full bg-purple-500/10 px-2 py-1 text-[10px] font-semibold uppercase text-purple-300">
+                        Host moderation
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-3">
+                    {chatMessages.length === 0 ? (
+                      <div className="flex h-full items-center justify-center text-center text-xs text-slate-500">
+                        No messages yet.
+                        <br />
+                        Start the conversation.
+                      </div>
+                    ) : (
+                      chatMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className="rounded-lg border border-slate-800 bg-slate-950 p-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-xs font-semibold text-slate-300">
+                                  {message.username}
+                                </span>
+
+                                {participants.find(
+                                  (participant) =>
+                                    participant.userId ===
+                                    message.userId
+                                )?.role === "host" && (
+                                  <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-purple-300">
+                                    Host
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="mt-1 break-words text-sm text-slate-200">
+                                {message.text}
+                              </p>
+                            </div>
+
+                            {isHost && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  deleteChatMessage(
+                                    message.id
+                                  )
+                                }
+                                className="shrink-0 rounded px-1.5 py-1 text-[10px] text-red-400 hover:bg-red-500/10"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      maxLength={500}
+                      onChange={(event) =>
+                        setChatInput(
+                          event.target.value
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey
+                        ) {
+                          event.preventDefault();
+                          sendChatMessage();
+                        }
+                      }}
+                      disabled={!connected}
+                      placeholder="Type a message..."
+                      className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm outline-none focus:border-blue-500 disabled:opacity-50"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={sendChatMessage}
+                      disabled={
+                        !connected ||
+                        !chatInput.trim()
+                      }
+                      className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Send
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-[10px] text-slate-600">
+                    Maximum 500 characters
+                  </p>
+                </div>
+
                 </div>
               </aside>
             </div>
