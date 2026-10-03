@@ -16,9 +16,13 @@ import type {
 
 const app = express();
 
+const PORT = Number(process.env.PORT) || 5000;
+const CLIENT_URL =
+  process.env.CLIENT_URL || "http://localhost:5173";
+
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: CLIENT_URL,
   })
 );
 
@@ -28,15 +32,12 @@ const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: CLIENT_URL,
     methods: ["GET", "POST"],
   },
 });
 
 const roomManager = new RoomManager();
-
-const PORT = 5000;
-
 /* -------------------------------------------------------------------------- */
 /*                                HTTP ROUTES                                 */
 /* -------------------------------------------------------------------------- */
@@ -972,11 +973,7 @@ io.on("connection", (socket) => {
 /*                                  SERVER                                   */
 /* -------------------------------------------------------------------------- */
 
-httpServer.listen(
-  PORT,
-  () => {
-    console.log(
-      `Server running on http://localhost:${PORT}`
-    );
-  }
-);
+httpServer.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Allowed client origin: ${CLIENT_URL}`);
+});

@@ -30,9 +30,7 @@ function waitForServer(): Promise<void> {
         const output = data.toString();
 
         if (
-          output.includes(
-            "Server running on http://localhost:5000"
-          )
+          output.includes("Server running on port 5000")
         ) {
           clearTimeout(timeout);
           resolve();
