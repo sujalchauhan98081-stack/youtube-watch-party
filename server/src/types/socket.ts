@@ -1,3 +1,5 @@
+import type { Role } from "./room.js";
+
 export interface CreateRoomPayload {
   username: string;
 }
@@ -11,7 +13,19 @@ export interface PlaybackPayload {
   roomId: string;
   currentTime: number;
 }
+
 export interface ChangeVideoPayload {
   roomId: string;
   videoId: string;
+}
+
+export interface AssignRolePayload {
+  roomId: string;
+  userId: string;
+  role: Role;
+}
+
+export interface RemoveParticipantPayload {
+  roomId: string;
+  userId: string;
 }

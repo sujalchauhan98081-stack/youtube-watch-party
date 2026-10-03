@@ -1,9 +1,16 @@
-import { Room, Participant } from "../types/room";
+import {
+  Participant,
+  Role,
+  Room,
+} from "../types/room.js";
 
 export class RoomManager {
-  private rooms: Map<string, Room> = new Map();
+  private rooms = new Map<string, Room>();
 
-  createRoom(roomId: string, host: Participant): Room {
+  createRoom(
+    roomId: string,
+    host: Participant
+  ): Room {
     const room: Room = {
       roomId,
       videoId: "dQw4w9WgXcQ",
@@ -37,6 +44,42 @@ export class RoomManager {
     return room;
   }
 
+  getParticipant(
+    roomId: string,
+    userId: string
+  ): Participant | undefined {
+    const room = this.rooms.get(roomId);
+
+    if (!room) {
+      return undefined;
+    }
+
+    return room.participants.find(
+      (participant) =>
+        participant.userId === userId
+    );
+  }
+
+  updateParticipantRole(
+    roomId: string,
+    userId: string,
+    role: Role
+  ): Participant | undefined {
+    const participant =
+      this.getParticipant(
+        roomId,
+        userId
+      );
+
+    if (!participant) {
+      return undefined;
+    }
+
+    participant.role = role;
+
+    return participant;
+  }
+
   removeParticipant(
     roomId: string,
     userId: string
@@ -47,8 +90,19 @@ export class RoomManager {
       return undefined;
     }
 
-    room.participants = room.participants.filter(
-      (participant) => participant.userId !== userId
+    const participantIndex =
+      room.participants.findIndex(
+        (participant) =>
+          participant.userId === userId
+      );
+
+    if (participantIndex === -1) {
+      return undefined;
+    }
+
+    room.participants.splice(
+      participantIndex,
+      1
     );
 
     return room;
