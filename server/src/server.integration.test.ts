@@ -847,6 +847,10 @@ test(
     const participant =
       await connectClient();
 
+    const hostId = host.id;
+
+    assert.ok(hostId);
+
     try {
       const created =
         await createRoom(
@@ -860,10 +864,6 @@ test(
         "Participant"
       );
 
-      const hostId = host.id;
-
-      assert.ok(hostId);
-
       const userLeft =
         waitForEvent<{
           participant: {
@@ -871,11 +871,11 @@ test(
             username: string;
             role: string;
           };
-          participants: Array<{
+          participants: {
             userId: string;
             username: string;
             role: string;
-          }>;
+          }[];
         }>(
           participant,
           "user_left"
@@ -902,21 +902,16 @@ test(
       );
 
       assert.equal(
-        result.participants.some(
-          (user) =>
-            user.userId === hostId
-        ),
-        false
+        result.participants.length,
+        1
       );
 
       assert.equal(
-        result.participants.some(
-          (user) =>
-            user.userId === participant.id
-        ),
-        true
+        result.participants[0].userId,
+        participant.id
       );
     } finally {
+      host.disconnect();
       participant.disconnect();
     }
   }
@@ -928,6 +923,11 @@ test(
     const host = await connectClient();
     const participant =
       await connectClient();
+
+    const participantId =
+      participant.id;
+
+    assert.ok(participantId);
 
     try {
       const created =
@@ -942,11 +942,6 @@ test(
         "Participant"
       );
 
-      const participantId =
-        participant.id;
-
-      assert.ok(participantId);
-
       const userLeft =
         waitForEvent<{
           participant: {
@@ -954,11 +949,11 @@ test(
             username: string;
             role: string;
           };
-          participants: Array<{
+          participants: {
             userId: string;
             username: string;
             role: string;
-          }>;
+          }[];
         }>(
           host,
           "user_left"
@@ -985,22 +980,207 @@ test(
       );
 
       assert.equal(
-        result.participants.some(
-          (user) =>
-            user.userId === participantId
-        ),
-        false
+        result.participants.length,
+        1
       );
 
       assert.equal(
-        result.participants.some(
-          (user) =>
-            user.userId === host.id
-        ),
-        true
+        result.participants[0].userId,
+        host.id
       );
     } finally {
       host.disconnect();
+      participant.disconnect();
+    }
+  }
+);
+
+test(
+  "late joiner receives current playing state",
+  async () => {
+    const host = await connectClient();
+    const observer = await connectClient();
+    const lateJoiner =
+      await connectClient();
+
+    try {
+      const created =
+        await createRoom(
+          host,
+          "Host"
+        );
+
+      await joinRoom(
+        observer,
+        created.roomId,
+        "Observer"
+      );
+
+      const playReceived =
+        waitForEvent<{
+          currentTime: number;
+        }>(
+          observer,
+          "play"
+        );
+
+      host.emit("play", {
+        roomId: created.roomId,
+        currentTime: 20,
+      });
+
+      await playReceived;
+
+      const syncState =
+        waitForEvent<{
+          videoId: string | null;
+          currentTime: number;
+          isPlaying: boolean;
+        }>(
+          lateJoiner,
+          "sync_state"
+        );
+
+      await joinRoom(
+        lateJoiner,
+        created.roomId,
+        "Late Joiner"
+      );
+
+      const sync =
+        await syncState;
+
+      assert.equal(
+        sync.videoId,
+        "dQw4w9WgXcQ"
+      );
+
+      assert.equal(
+        sync.isPlaying,
+        true
+      );
+
+      assert.ok(
+        sync.currentTime >= 20
+      );
+
+      assert.ok(
+        sync.currentTime < 25
+      );
+    } finally {
+      host.disconnect();
+      observer.disconnect();
+      lateJoiner.disconnect();
+    }
+  }
+);
+
+test(
+  "late joiner receives current paused state",
+  async () => {
+    const host = await connectClient();
+    const lateJoiner =
+      await connectClient();
+
+    try {
+      const created =
+        await createRoom(
+          host,
+          "Host"
+        );
+
+      const syncState =
+        waitForEvent<{
+          videoId: string | null;
+          currentTime: number;
+          isPlaying: boolean;
+        }>(
+          lateJoiner,
+          "sync_state"
+        );
+
+      /*
+       * A newly created room starts paused
+       * at time 0. Seek to a known position
+       * while remaining paused.
+       */
+      const observer =
+        await connectClient();
+
+      try {
+        await joinRoom(
+          observer,
+          created.roomId,
+          "Observer"
+        );
+
+        const seekReceived =
+          waitForEvent<{
+            currentTime: number;
+          }>(
+            observer,
+            "seek"
+          );
+
+        host.emit("seek", {
+          roomId:
+            created.roomId,
+          currentTime: 42,
+        });
+
+        await seekReceived;
+      } finally {
+        observer.disconnect();
+      }
+
+      /*
+       * Register the sync listener again because
+       * the previous listener was created before
+       * the seek operation and may otherwise make
+       * the test harder to reason about.
+       */
+      const pausedSyncState =
+        waitForEvent<{
+          videoId: string | null;
+          currentTime: number;
+          isPlaying: boolean;
+        }>(
+          lateJoiner,
+          "sync_state"
+        );
+
+      await joinRoom(
+        lateJoiner,
+        created.roomId,
+        "Late Joiner"
+      );
+
+      const sync =
+        await pausedSyncState;
+
+      assert.equal(
+        sync.videoId,
+        "dQw4w9WgXcQ"
+      );
+
+      assert.equal(
+        sync.currentTime,
+        42
+      );
+
+      assert.equal(
+        sync.isPlaying,
+        false
+      );
+
+      /*
+       * Prevent the initial unused listener
+       * from remaining active.
+       */
+      void syncState;
+    } finally {
+      host.disconnect();
+      lateJoiner.disconnect();
     }
   }
 );
