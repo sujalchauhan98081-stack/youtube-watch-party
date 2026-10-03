@@ -11,3 +11,7 @@ export interface PlaybackPayload {
   roomId: string;
   currentTime: number;
 }
+export interface ChangeVideoPayload {
+  roomId: string;
+  videoId: string;
+}

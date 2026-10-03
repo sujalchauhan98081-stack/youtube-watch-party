@@ -16,6 +16,9 @@ function App() {
   const [roomId, setRoomId] = useState("");
 
   const [joinRoomId, setJoinRoomId] = useState("");
+  const [videoId, setVideoId] = useState("dQw4w9WgXcQ");
+
+  const [videoInput, setVideoInput] = useState("");
 
   useEffect(() => {
     const handleConnect = () => {
@@ -50,6 +53,15 @@ function App() {
       setRoomId(data.roomId);
 
       setServerMessage(`Joined room as ${data.role}`);
+    };
+    const handleVideoChanged = (data: { videoId: string }) => {
+      console.log("========== VIDEO CHANGED ==========");
+
+      console.log("New video:", data.videoId);
+
+      setVideoId(data.videoId);
+
+      setServerMessage(`Video changed to ${data.videoId}`);
     };
 
     const handleRoomError = (data: { message: string }) => {
@@ -140,6 +152,7 @@ function App() {
 
     socket.on("pause", handleRemotePause);
     socket.on("seek", handleRemoteSeek);
+    socket.on("video_changed", handleVideoChanged);
 
     if (!socket.connected) {
       socket.connect();
@@ -164,6 +177,7 @@ function App() {
 
       socket.off("pause", handleRemotePause);
       socket.off("seek", handleRemoteSeek);
+      socket.off("video_changed", handleVideoChanged);
 
       socket.disconnect();
     };
@@ -234,24 +248,49 @@ function App() {
   }, [roomId]);
 
   const handleLocalSeek = useCallback(
-  (currentTime: number) => {
+    (currentTime: number) => {
+      if (!roomId) {
+        console.log("SEEK ignored: no room");
+        return;
+      }
+
+      console.log("========== LOCAL SEEK ==========");
+      console.log("Room:", roomId);
+      console.log("Time:", currentTime);
+      console.log("Socket:", socket.id);
+
+      socket.emit("seek", {
+        roomId,
+        currentTime,
+      });
+    },
+    [roomId],
+  );
+  const handleChangeVideo = () => {
     if (!roomId) {
-      console.log("SEEK ignored: no room");
+      setServerMessage("Join a room before changing the video");
       return;
     }
 
-    console.log("========== LOCAL SEEK ==========");
-    console.log("Room:", roomId);
-    console.log("Time:", currentTime);
-    console.log("Socket:", socket.id);
+    const newVideoId = videoInput.trim();
 
-    socket.emit("seek", {
+    if (!newVideoId) {
+      setServerMessage("Please enter a YouTube video ID");
+      return;
+    }
+
+    console.log("========== CHANGE VIDEO ==========");
+
+    console.log("Room:", roomId);
+    console.log("Video:", newVideoId);
+
+    socket.emit("change_video", {
       roomId,
-      currentTime,
+      videoId: newVideoId,
     });
-  },
-  [roomId]
-);
+
+    setVideoInput("");
+  };
 
   const createRoom = () => {
     console.log("CREATE ROOM REQUEST");
@@ -351,7 +390,7 @@ function App() {
         <div className="mt-8">
           <YouTubePlayer
             ref={playerRef}
-            videoId="dQw4w9WgXcQ"
+            videoId={videoId}
             onPlay={handleLocalPlay}
             onPause={handleLocalPause}
             onSeek={handleLocalSeek}
@@ -363,8 +402,30 @@ function App() {
             <h2 className="text-xl font-semibold">Watch Party</h2>
 
             <p className="mt-2 text-sm text-slate-400">
-              Use the YouTube player controls. Play and pause actions are
-              synchronized with the room.
+              Play, pause, seek, or change the video using the watch party
+              controls.
+            </p>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                placeholder="Enter YouTube video ID"
+                value={videoInput}
+                onChange={(event) => setVideoInput(event.target.value)}
+                className="min-w-0 flex-1 rounded-lg bg-white px-4 py-3 text-black outline-none"
+              />
+
+              <button
+                onClick={handleChangeVideo}
+                disabled={!connected}
+                className="rounded-lg bg-purple-600 px-5 py-3 font-medium transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Change Video
+              </button>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-500">
+              Current video ID: {videoId}
             </p>
           </div>
         )}

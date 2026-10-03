@@ -9,6 +9,7 @@ import {
   CreateRoomPayload,
   JoinRoomPayload,
   PlaybackPayload,
+  ChangeVideoPayload,
 } from "./types/socket";
 
 const app = express();
@@ -361,6 +362,66 @@ io.on("connection", (socket) => {
     currentTime: room.currentTime,
   });
 });
+socket.on(
+  "change_video",
+  (data: ChangeVideoPayload) => {
+    const room = roomManager.getRoom(data.roomId);
+
+    if (!room) {
+      socket.emit("room_error", {
+        message: "Room does not exist",
+      });
+
+      return;
+    }
+
+    const participant = room.participants.find(
+      (user) => user.userId === socket.id
+    );
+
+    if (!participant) {
+      socket.emit("room_error", {
+        message:
+          "You are not a member of this room",
+      });
+
+      return;
+    }
+
+    if (
+      participant.role !== "host" &&
+      participant.role !== "moderator"
+    ) {
+      socket.emit("room_error", {
+        message:
+          "You do not have permission to change the video",
+      });
+
+      return;
+    }
+
+    if (!data.videoId.trim()) {
+      socket.emit("room_error", {
+        message: "Video ID is required",
+      });
+
+      return;
+    }
+
+    room.videoId = data.videoId.trim();
+
+    room.currentTime = 0;
+    room.isPlaying = false;
+
+    console.log(
+      `VIDEO CHANGE: ${participant.username} -> ${room.videoId}`
+    );
+
+    io.to(data.roomId).emit("video_changed", {
+      videoId: room.videoId,
+    });
+  }
+);
 
   socket.on("disconnect", () => {
     console.log(
