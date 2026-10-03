@@ -4,7 +4,6 @@ import http from "http";
 import { Server } from "socket.io";
 
 import { RoomManager } from "./services/roomManager";
-
 import {
   CreateRoomPayload,
   JoinRoomPayload,
@@ -41,330 +40,109 @@ app.get("/api/health", (_req, res) => {
 });
 
 io.on("connection", (socket) => {
-  console.log(
-    `Client connected: ${socket.id}`
-  );
+  console.log(`Client connected: ${socket.id}`);
 
   socket.emit("server:ready", {
     message: "Socket connection established",
   });
 
-  socket.on(
-    "create_room",
-    (data: CreateRoomPayload) => {
-      const roomId = Math.random()
-        .toString(36)
-        .substring(2, 8)
-        .toUpperCase();
+  // =========================
+  // CREATE ROOM
+  // =========================
 
-      const host = {
-        userId: socket.id,
-        username: data.username,
-        role: "host" as const,
-      };
+  socket.on("create_room", (data: CreateRoomPayload) => {
+    const roomId = Math.random()
+      .toString(36)
+      .substring(2, 8)
+      .toUpperCase();
 
-      const room =
-        roomManager.createRoom(
-          roomId,
-          host
-        );
+    const host = {
+      userId: socket.id,
+      username: data.username,
+      role: "host" as const,
+    };
 
-      socket.join(roomId);
+    const room = roomManager.createRoom(roomId, host);
 
-      socket.emit("room_created", {
-        roomId: room.roomId,
-        role: host.role,
-        room,
-      });
+    socket.join(roomId);
 
-      console.log(
-        `Room ${roomId} created by ${data.username} (${socket.id})`
-      );
-    }
-  );
-
-  socket.on(
-    "join_room",
-    (data: JoinRoomPayload) => {
-      const room =
-        roomManager.getRoom(
-          data.roomId
-        );
-
-      if (!room) {
-        socket.emit("room_error", {
-          message: "Room does not exist",
-        });
-
-        return;
-      }
-
-      const participant = {
-        userId: socket.id,
-        username: data.username,
-        role: "participant" as const,
-      };
-
-      roomManager.addParticipant(
-        data.roomId,
-        participant
-      );
-
-      socket.join(data.roomId);
-
-      socket.emit("room_joined", {
-        roomId: room.roomId,
-        role: participant.role,
-        room,
-      });
-
-      socket
-        .to(data.roomId)
-        .emit("user_joined", {
-          participant,
-        });
-
-      console.log(
-        `${data.username} joined room ${data.roomId} (${socket.id})`
-      );
-    }
-  );
-
-  socket.on(
-    "play",
-    (data: PlaybackPayload) => {
-      console.log(
-        "========== PLAY EVENT =========="
-      );
-
-      console.log(
-        "Socket:",
-        socket.id
-      );
-
-      console.log(
-        "Room:",
-        data.roomId
-      );
-
-      console.log(
-        "Time:",
-        data.currentTime
-      );
-
-      const room =
-        roomManager.getRoom(
-          data.roomId
-        );
-
-      if (!room) {
-        console.log(
-          "PLAY REJECTED: room does not exist"
-        );
-
-        socket.emit("room_error", {
-          message: "Room does not exist",
-        });
-
-        return;
-      }
-
-      const participant =
-        room.participants.find(
-          (user) =>
-            user.userId === socket.id
-        );
-
-      if (!participant) {
-        console.log(
-          "PLAY REJECTED: user is not a room member"
-        );
-
-        socket.emit("room_error", {
-          message:
-            "You are not a member of this room",
-        });
-
-        return;
-      }
-
-      if (
-        participant.role !== "host" &&
-        participant.role !== "moderator"
-      ) {
-        console.log(
-          "PLAY REJECTED: insufficient permissions"
-        );
-
-        socket.emit("room_error", {
-          message:
-            "You do not have permission to control playback",
-        });
-
-        return;
-      }
-
-      room.currentTime =
-        data.currentTime;
-
-      room.isPlaying = true;
-
-      console.log(
-        "PLAY ACCEPTED. Broadcasting to room:",
-        data.roomId
-      );
-
-      socket.to(data.roomId).emit(
-        "play",
-        {
-          currentTime:
-            room.currentTime,
-        }
-      );
-    }
-  );
-
-  socket.on(
-    "pause",
-    (data: PlaybackPayload) => {
-      console.log(
-        "========== PAUSE EVENT =========="
-      );
-
-      console.log(
-        "Socket:",
-        socket.id
-      );
-
-      console.log(
-        "Room:",
-        data.roomId
-      );
-
-      console.log(
-        "Time:",
-        data.currentTime
-      );
-
-      const room =
-        roomManager.getRoom(
-          data.roomId
-        );
-
-      if (!room) {
-        console.log(
-          "PAUSE REJECTED: room does not exist"
-        );
-
-        socket.emit("room_error", {
-          message: "Room does not exist",
-        });
-
-        return;
-      }
-
-      const participant =
-        room.participants.find(
-          (user) =>
-            user.userId === socket.id
-        );
-
-      if (!participant) {
-        console.log(
-          "PAUSE REJECTED: user is not a room member"
-        );
-
-        socket.emit("room_error", {
-          message:
-            "You are not a member of this room",
-        });
-
-        return;
-      }
-
-      if (
-        participant.role !== "host" &&
-        participant.role !== "moderator"
-      ) {
-        console.log(
-          "PAUSE REJECTED: insufficient permissions"
-        );
-
-        socket.emit("room_error", {
-          message:
-            "You do not have permission to control playback",
-        });
-
-        return;
-      }
-
-      room.currentTime =
-        data.currentTime;
-
-      room.isPlaying = false;
-
-      console.log(
-        "PAUSE ACCEPTED. Broadcasting to room:",
-        data.roomId
-      );
-
-      socket.to(data.roomId).emit(
-        "pause",
-        {
-          currentTime:
-            room.currentTime,
-        }
-      );
-    }
-  );
-  socket.on("seek", (data: PlaybackPayload) => {
-  const room = roomManager.getRoom(data.roomId);
-
-  if (!room) {
-    socket.emit("room_error", {
-      message: "Room does not exist",
+    socket.emit("room_created", {
+      roomId: room.roomId,
+      role: host.role,
+      room,
     });
 
-    return;
-  }
-
-  const participant = room.participants.find(
-    (user) => user.userId === socket.id
-  );
-
-  if (!participant) {
-    socket.emit("room_error", {
-      message: "You are not a member of this room",
-    });
-
-    return;
-  }
-
-  if (
-    participant.role !== "host" &&
-    participant.role !== "moderator"
-  ) {
-    socket.emit("room_error", {
-      message:
-        "You do not have permission to control playback",
-    });
-
-    return;
-  }
-
-  room.currentTime = data.currentTime;
-
-  console.log(
-    `SEEK EVENT: ${participant.username} -> ${data.currentTime}s`
-  );
-
-  socket.to(data.roomId).emit("seek", {
-    currentTime: room.currentTime,
+    console.log(`ROOM CREATED: ${roomId} by ${host.username}`);
   });
-});
-socket.on(
-  "change_video",
-  (data: ChangeVideoPayload) => {
+
+  // =========================
+  // JOIN ROOM
+  // =========================
+
+  socket.on("join_room", (data: JoinRoomPayload) => {
+    const room = roomManager.getRoom(data.roomId);
+
+    if (!room) {
+      socket.emit("room_error", {
+        message: "Room does not exist",
+      });
+
+      return;
+    }
+
+    const participant = {
+      userId: socket.id,
+      username: data.username,
+      role: "participant" as const,
+    };
+
+    roomManager.addParticipant(data.roomId, participant);
+
+    socket.join(data.roomId);
+
+    socket.emit("room_joined", {
+      roomId: room.roomId,
+      role: participant.role,
+      room,
+    });
+
+    // Calculate the real current position.
+    let syncTime = room.currentTime;
+
+    if (room.isPlaying) {
+      syncTime +=
+        (Date.now() - room.lastUpdatedAt) / 1000;
+    }
+
+    console.log(
+      `SYNC STATE -> ${participant.username}:`,
+      {
+        videoId: room.videoId,
+        currentTime: syncTime,
+        isPlaying: room.isPlaying,
+      }
+    );
+
+    socket.emit("sync_state", {
+      videoId: room.videoId,
+      currentTime: syncTime,
+      isPlaying: room.isPlaying,
+    });
+
+    socket.to(data.roomId).emit("user_joined", {
+      participant,
+    });
+
+    console.log(
+      `USER JOINED: ${participant.username} -> ${data.roomId}`
+    );
+  });
+
+  // =========================
+  // PLAY
+  // =========================
+
+  socket.on("play", (data: PlaybackPayload) => {
     const room = roomManager.getRoom(data.roomId);
 
     if (!room) {
@@ -381,8 +159,7 @@ socket.on(
 
     if (!participant) {
       socket.emit("room_error", {
-        message:
-          "You are not a member of this room",
+        message: "You are not a member of this room",
       });
 
       return;
@@ -394,46 +171,203 @@ socket.on(
     ) {
       socket.emit("room_error", {
         message:
-          "You do not have permission to change the video",
+          "You do not have permission to control playback",
       });
 
       return;
     }
 
-    if (!data.videoId.trim()) {
-      socket.emit("room_error", {
-        message: "Video ID is required",
-      });
-
-      return;
-    }
-
-    room.videoId = data.videoId.trim();
-
-    room.currentTime = 0;
-    room.isPlaying = false;
+    room.currentTime = data.currentTime;
+    room.isPlaying = true;
+    room.lastUpdatedAt = Date.now();
 
     console.log(
-      `VIDEO CHANGE: ${participant.username} -> ${room.videoId}`
+      `PLAY EVENT: ${participant.username} -> ${room.currentTime}s`
     );
 
-    io.to(data.roomId).emit("video_changed", {
-      videoId: room.videoId,
+    socket.to(data.roomId).emit("play", {
+      currentTime: room.currentTime,
     });
-  }
-);
-
-  socket.on("disconnect", () => {
-    console.log(
-      `Client disconnected: ${socket.id}`
-    );
   });
+
+  // =========================
+  // PAUSE
+  // =========================
+
+  socket.on("pause", (data: PlaybackPayload) => {
+    const room = roomManager.getRoom(data.roomId);
+
+    if (!room) {
+      socket.emit("room_error", {
+        message: "Room does not exist",
+      });
+
+      return;
+    }
+
+    const participant = room.participants.find(
+      (user) => user.userId === socket.id
+    );
+
+    if (!participant) {
+      socket.emit("room_error", {
+        message: "You are not a member of this room",
+      });
+
+      return;
+    }
+
+    if (
+      participant.role !== "host" &&
+      participant.role !== "moderator"
+    ) {
+      socket.emit("room_error", {
+        message:
+          "You do not have permission to control playback",
+      });
+
+      return;
+    }
+
+    if (room.isPlaying) {
+      room.currentTime +=
+        (Date.now() - room.lastUpdatedAt) / 1000;
+    }
+
+    room.isPlaying = false;
+    room.lastUpdatedAt = Date.now();
+
+    console.log(
+      `PAUSE EVENT: ${participant.username} -> ${room.currentTime}s`
+    );
+
+    socket.to(data.roomId).emit("pause", {
+      currentTime: room.currentTime,
+    });
+  });
+
+  // =========================
+  // SEEK
+  // =========================
+
+  socket.on("seek", (data: PlaybackPayload) => {
+    const room = roomManager.getRoom(data.roomId);
+
+    if (!room) {
+      socket.emit("room_error", {
+        message: "Room does not exist",
+      });
+
+      return;
+    }
+
+    const participant = room.participants.find(
+      (user) => user.userId === socket.id
+    );
+
+    if (!participant) {
+      socket.emit("room_error", {
+        message: "You are not a member of this room",
+      });
+
+      return;
+    }
+
+    if (
+      participant.role !== "host" &&
+      participant.role !== "moderator"
+    ) {
+      socket.emit("room_error", {
+        message:
+          "You do not have permission to control playback",
+      });
+
+      return;
+    }
+
+    room.currentTime = data.currentTime;
+    room.lastUpdatedAt = Date.now();
+
+    console.log(
+      `SEEK EVENT: ${participant.username} -> ${room.currentTime}s`
+    );
+
+    socket.to(data.roomId).emit("seek", {
+      currentTime: room.currentTime,
+    });
+  });
+
+  // =========================
+  // CHANGE VIDEO
+  // =========================
+
+  socket.on(
+    "change_video",
+    (data: ChangeVideoPayload) => {
+      const room = roomManager.getRoom(data.roomId);
+
+      if (!room) {
+        socket.emit("room_error", {
+          message: "Room does not exist",
+        });
+
+        return;
+      }
+
+      const participant = room.participants.find(
+        (user) => user.userId === socket.id
+      );
+
+      if (!participant) {
+        socket.emit("room_error", {
+          message: "You are not a member of this room",
+        });
+
+        return;
+      }
+
+      if (
+        participant.role !== "host" &&
+        participant.role !== "moderator"
+      ) {
+        socket.emit("room_error", {
+          message:
+            "You do not have permission to change the video",
+        });
+
+        return;
+      }
+
+      if (!data.videoId.trim()) {
+        socket.emit("room_error", {
+          message: "Video ID is required",
+        });
+
+        return;
+      }
+
+      room.videoId = data.videoId.trim();
+      room.currentTime = 0;
+      room.isPlaying = false;
+      room.lastUpdatedAt = Date.now();
+
+      console.log(
+        `VIDEO CHANGE: ${participant.username} -> ${room.videoId}`
+      );
+
+      io.to(data.roomId).emit("video_changed", {
+        videoId: room.videoId,
+      });
+    }
+  );
 });
+
+// =========================
+// SERVER START
+// =========================
 
 const PORT = 5000;
 
 httpServer.listen(PORT, () => {
-  console.log(
-    `Server running on http://localhost:${PORT}`
-  );
+  console.log(`Server running on http://localhost:${PORT}`);
 });

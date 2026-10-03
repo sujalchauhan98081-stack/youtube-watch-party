@@ -6,9 +6,10 @@ export class RoomManager {
   createRoom(roomId: string, host: Participant): Room {
     const room: Room = {
       roomId,
-      videoId: null,
+      videoId: "dQw4w9WgXcQ",
       isPlaying: false,
       currentTime: 0,
+      lastUpdatedAt: Date.now(),
       participants: [host],
     };
 
@@ -21,7 +22,10 @@ export class RoomManager {
     return this.rooms.get(roomId);
   }
 
-  addParticipant(roomId: string, participant: Participant): Room | undefined {
+  addParticipant(
+    roomId: string,
+    participant: Participant
+  ): Room | undefined {
     const room = this.rooms.get(roomId);
 
     if (!room) {

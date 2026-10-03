@@ -15,7 +15,7 @@ test("creates a room with the creator as host", () => {
   const room = roomManager.createRoom("ABC123", host);
 
   assert.equal(room.roomId, "ABC123");
-  assert.equal(room.videoId, null);
+  assert.strictEqual(room.videoId, "dQw4w9WgXcQ");
   assert.equal(room.isPlaying, false);
   assert.equal(room.currentTime, 0);
   assert.equal(room.participants.length, 1);

@@ -11,5 +11,6 @@ export interface Room {
   videoId: string | null;
   isPlaying: boolean;
   currentTime: number;
+  lastUpdatedAt: number;
   participants: Participant[];
 }
