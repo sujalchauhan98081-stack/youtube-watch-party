@@ -80,6 +80,44 @@ export class RoomManager {
     return participant;
   }
 
+  transferHost(
+    roomId: string,
+    currentHostId: string,
+    newHostId: string
+  ): Room | undefined {
+    const room = this.rooms.get(roomId);
+
+    if (!room) {
+      return undefined;
+    }
+
+    const currentHost =
+      room.participants.find(
+        (participant) =>
+          participant.userId === currentHostId &&
+          participant.role === "host"
+      );
+
+    const newHost =
+      room.participants.find(
+        (participant) =>
+          participant.userId === newHostId
+      );
+
+    if (!currentHost || !newHost) {
+      return undefined;
+    }
+
+    if (currentHost.userId === newHost.userId) {
+      return undefined;
+    }
+
+    currentHost.role = "moderator";
+    newHost.role = "host";
+
+    return room;
+  }
+
   removeParticipant(
     roomId: string,
     userId: string

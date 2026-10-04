@@ -12,6 +12,7 @@ import type {
   JoinRoomPayload,
   PlaybackPayload,
   RemoveParticipantPayload,
+  TransferHostPayload,
 } from "./types/socket.js";
 
 const app = express();
@@ -857,6 +858,120 @@ io.on("connection", (socket) => {
     }
   );
 
+    /* ---------------------------------------------------------------------- */
+  /*                           TRANSFER HOST                                */
+  /* ---------------------------------------------------------------------- */
+
+  socket.on(
+    "transfer_host",
+    (data: TransferHostPayload) => {
+      const roomId = data.roomId;
+
+      if (
+        !hasRoomAccess(
+          socket,
+          roomId
+        )
+      ) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      const room =
+        roomManager.getRoom(roomId);
+
+      if (!room) {
+        sendPermissionError(
+          socket,
+          "Room not found."
+        );
+        return;
+      }
+
+      const requester =
+        getParticipant(
+          socket,
+          roomId
+        );
+
+      if (!requester) {
+        sendPermissionError(
+          socket,
+          "You are not a member of this room."
+        );
+        return;
+      }
+
+      if (
+        requester.role !== "host"
+      ) {
+        sendPermissionError(
+          socket,
+          "Only the host can transfer host role."
+        );
+        return;
+      }
+
+      const target =
+        roomManager.getParticipant(
+          roomId,
+          data.userId
+        );
+
+      if (!target) {
+        sendPermissionError(
+          socket,
+          "Participant not found."
+        );
+        return;
+      }
+
+      if (
+        target.userId === requester.userId
+      ) {
+        sendPermissionError(
+          socket,
+          "You are already the host."
+        );
+        return;
+      }
+
+      const updatedRoom =
+        roomManager.transferHost(
+          roomId,
+          requester.userId,
+          target.userId
+        );
+
+      if (!updatedRoom) {
+        sendPermissionError(
+          socket,
+          "Unable to transfer host role."
+        );
+        return;
+      }
+
+      io.to(roomId).emit(
+        "host_transferred",
+        {
+          previousHostId:
+            requester.userId,
+          newHostId:
+            target.userId,
+          participants:
+            updatedRoom.participants,
+        }
+      );
+
+      console.log(
+        `Host transferred in room ${roomId}: ${requester.username} -> ${target.username}`
+      );
+    }
+  );
+
   /* ---------------------------------------------------------------------- */
   /*                          REMOVE PARTICIPANT                            */
   /* ---------------------------------------------------------------------- */
@@ -1062,7 +1177,7 @@ io.on("connection", (socket) => {
     }
   );
 
-  /* ---------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------------- */
   /*                              DISCONNECT                                */
   /* ---------------------------------------------------------------------- */
 
@@ -1096,6 +1211,44 @@ io.on("connection", (socket) => {
         return;
       }
 
+      const wasHost =
+        participant.role === "host";
+
+      let newHostId:
+        | string
+        | undefined;
+
+      let newHostUsername:
+        | string
+        | undefined;
+
+      /*
+       * If the disconnected user was the host,
+       * promote an existing moderator before
+       * removing the old host.
+       */
+      if (wasHost) {
+        const room =
+          roomManager.getRoom(roomId);
+
+        const moderator =
+          room?.participants.find(
+            (member) =>
+              member.role === "moderator" &&
+              member.userId !== socket.id
+          );
+
+        if (moderator) {
+          newHostId =
+            moderator.userId;
+
+          newHostUsername =
+            moderator.username;
+
+          moderator.role = "host";
+        }
+      }
+
       const updatedRoom =
         roomManager.removeParticipant(
           roomId,
@@ -1103,6 +1256,34 @@ io.on("connection", (socket) => {
         );
 
       if (updatedRoom) {
+        /*
+         * Notify everyone that the host
+         * has been transferred.
+         */
+        if (
+          wasHost &&
+          newHostId &&
+          newHostUsername
+        ) {
+          io.to(roomId).emit(
+            "host_transferred",
+            {
+              previousHostId:
+                socket.id,
+              newHostId,
+              newHostUsername,
+              participants:
+                updatedRoom.participants,
+              reason:
+                "Host disconnected",
+            }
+          );
+        }
+
+        /*
+         * Notify everyone that the old
+         * participant has left.
+         */
         socket.to(roomId).emit(
           "user_left",
           {
@@ -1116,6 +1297,16 @@ io.on("connection", (socket) => {
       console.log(
         `${participant.username} disconnected from room ${roomId}`
       );
+
+      if (
+        wasHost &&
+        newHostId &&
+        newHostUsername
+      ) {
+        console.log(
+          `Host automatically transferred in room ${roomId}: ${newHostUsername}`
+        );
+      }
     }
   );
 });

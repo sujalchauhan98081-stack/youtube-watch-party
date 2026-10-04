@@ -39,3 +39,8 @@ export interface DeleteChatMessagePayload {
   roomId: string;
   messageId: string;
 }
+
+export interface TransferHostPayload {
+  roomId: string;
+  userId: string;
+}

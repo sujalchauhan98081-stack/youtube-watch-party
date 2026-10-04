@@ -1182,3 +1182,434 @@ test(
     }
   }
 );
+
+test(
+  "host can transfer host role to a participant",
+  async () => {
+    const host = await connectClient();
+    const participant = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await joinRoom(
+        participant,
+        created.roomId,
+        "Participant"
+      );
+
+      const transferred =
+        waitForEvent<{
+          previousHostId: string;
+          newHostId: string;
+          participants: {
+            userId: string;
+            username: string;
+            role: string;
+          }[];
+        }>(
+          participant,
+          "host_transferred"
+        );
+
+      host.emit("transfer_host", {
+        roomId: created.roomId,
+        userId: participant.id,
+      });
+
+      const result = await transferred;
+
+      assert.equal(
+        result.previousHostId,
+        host.id
+      );
+
+      assert.equal(
+        result.newHostId,
+        participant.id
+      );
+
+      const oldHost = result.participants.find(
+        (member) => member.userId === host.id
+      );
+
+      const newHost = result.participants.find(
+        (member) => member.userId === participant.id
+      );
+
+      assert.ok(oldHost);
+      assert.ok(newHost);
+
+      assert.equal(
+        oldHost.role,
+        "moderator"
+      );
+
+      assert.equal(
+        newHost.role,
+        "host"
+      );
+    } finally {
+      host.disconnect();
+      participant.disconnect();
+    }
+  }
+);
+
+
+test(
+  "host can transfer host role to a moderator",
+  async () => {
+    const host = await connectClient();
+    const moderator = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await joinRoom(
+        moderator,
+        created.roomId,
+        "Moderator"
+      );
+
+      const roleAssigned =
+        waitForEvent(
+          moderator,
+          "role_assigned"
+        );
+
+      host.emit("assign_role", {
+        roomId: created.roomId,
+        userId: moderator.id,
+        role: "moderator",
+      });
+
+      await roleAssigned;
+
+      const transferred =
+        waitForEvent<{
+          previousHostId: string;
+          newHostId: string;
+          participants: {
+            userId: string;
+            username: string;
+            role: string;
+          }[];
+        }>(
+          moderator,
+          "host_transferred"
+        );
+
+      host.emit("transfer_host", {
+        roomId: created.roomId,
+        userId: moderator.id,
+      });
+
+      const result = await transferred;
+
+      assert.equal(
+        result.previousHostId,
+        host.id
+      );
+
+      assert.equal(
+        result.newHostId,
+        moderator.id
+      );
+
+      const oldHost = result.participants.find(
+        (member) => member.userId === host.id
+      );
+
+      const newHost = result.participants.find(
+        (member) => member.userId === moderator.id
+      );
+
+      assert.ok(oldHost);
+      assert.ok(newHost);
+
+      assert.equal(
+        oldHost.role,
+        "moderator"
+      );
+
+      assert.equal(
+        newHost.role,
+        "host"
+      );
+    } finally {
+      host.disconnect();
+      moderator.disconnect();
+    }
+  }
+);
+
+
+test(
+  "moderator cannot transfer host role",
+  async () => {
+    const host = await connectClient();
+    const moderator = await connectClient();
+    const participant = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await joinRoom(
+        moderator,
+        created.roomId,
+        "Moderator"
+      );
+
+      await joinRoom(
+        participant,
+        created.roomId,
+        "Participant"
+      );
+
+      const roleAssigned =
+        waitForEvent(
+          moderator,
+          "role_assigned"
+        );
+
+      host.emit("assign_role", {
+        roomId: created.roomId,
+        userId: moderator.id,
+        role: "moderator",
+      });
+
+      await roleAssigned;
+
+      await expectRoomError(
+        moderator,
+        "transfer_host",
+        {
+          roomId: created.roomId,
+          userId: participant.id,
+        },
+        "Only the host can transfer host role."
+      );
+    } finally {
+      host.disconnect();
+      moderator.disconnect();
+      participant.disconnect();
+    }
+  }
+);
+
+
+test(
+  "participant cannot transfer host role",
+  async () => {
+    const host = await connectClient();
+    const participant = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await joinRoom(
+        participant,
+        created.roomId,
+        "Participant"
+      );
+
+      await expectRoomError(
+        participant,
+        "transfer_host",
+        {
+          roomId: created.roomId,
+          userId: participant.id,
+        },
+        "Only the host can transfer host role."
+      );
+    } finally {
+      host.disconnect();
+      participant.disconnect();
+    }
+  }
+);
+
+
+test(
+  "host cannot transfer host role to themselves",
+  async () => {
+    const host = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await expectRoomError(
+        host,
+        "transfer_host",
+        {
+          roomId: created.roomId,
+          userId: host.id,
+        },
+        "You are already the host."
+      );
+    } finally {
+      host.disconnect();
+    }
+  }
+);
+
+
+test(
+  "host cannot transfer host role to an invalid participant",
+  async () => {
+    const host = await connectClient();
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await expectRoomError(
+        host,
+        "transfer_host",
+        {
+          roomId: created.roomId,
+          userId: "non-existent-user",
+        },
+        "Participant not found."
+      );
+    } finally {
+      host.disconnect();
+    }
+  }
+);
+
+
+test(
+  "host disconnect automatically transfers host role to moderator",
+  async () => {
+    const host = await connectClient();
+const moderator = await connectClient();
+const observer = await connectClient();
+
+const hostId = host.id;
+const moderatorId = moderator.id;
+
+assert.ok(hostId);
+assert.ok(moderatorId);
+
+    try {
+      const created = await createRoom(
+        host,
+        "Host"
+      );
+
+      await joinRoom(
+        moderator,
+        created.roomId,
+        "Moderator"
+      );
+
+      await joinRoom(
+        observer,
+        created.roomId,
+        "Observer"
+      );
+
+      const roleAssigned =
+        waitForEvent(
+          moderator,
+          "role_assigned"
+        );
+
+      host.emit("assign_role", {
+        roomId: created.roomId,
+        userId: moderator.id,
+        role: "moderator",
+      });
+
+      await roleAssigned;
+
+      const transferred =
+        waitForEvent<{
+          previousHostId: string;
+          newHostId: string;
+          newHostUsername: string;
+          participants: {
+            userId: string;
+            username: string;
+            role: string;
+          }[];
+          reason: string;
+        }>(
+          observer,
+          "host_transferred"
+        );
+
+      host.disconnect();
+
+      const result = await transferred;
+
+      assert.equal(
+        result.previousHostId,
+        hostId
+      );
+
+      assert.equal(
+        result.newHostId,
+        moderatorId
+      );
+
+      assert.equal(
+        result.newHostUsername,
+        "Moderator"
+      );
+
+      assert.equal(
+        result.reason,
+        "Host disconnected"
+      );
+
+      const newHost = result.participants.find(
+        (member) =>
+          member.userId === moderatorId
+      );
+
+      assert.ok(newHost);
+
+      assert.equal(
+        newHost.role,
+        "host"
+      );
+
+      assert.equal(
+        result.participants.length,
+        2
+      );
+
+      assert.equal(
+        result.participants.some(
+          (member) =>
+            member.userId === hostId
+        ),
+        false
+      );
+    } finally {
+      host.disconnect();
+      moderator.disconnect();
+      observer.disconnect();
+    }
+  }
+);
